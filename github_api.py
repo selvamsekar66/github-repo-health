@@ -132,3 +132,36 @@ print("------------")
 print("Total Issues:", total_issues)
 print("Open Issues:", open_issues)
 print("Closed Issues:", closed_issues)
+
+
+# -----------------------------------
+# Commit Activity
+# -----------------------------------
+
+commits_url = f"https://api.github.com/repos/{owner}/{repo}/commits"
+
+commit_params = {
+    "per_page": 10
+}
+
+commits_response = requests.get(
+    commits_url,
+    headers=headers,
+    params=commit_params
+)
+
+print("\nCommits API Status:", commits_response.status_code)
+
+commits_data = commits_response.json()
+
+print("\nRecent Commit Activity")
+print("----------------------")
+
+print("Recent Commits:", len(commits_data))
+
+for commit in commits_data:
+    sha = commit["sha"][:7]
+    message = commit["commit"]["message"].split("\n")[0]
+    author = commit["commit"]["author"]["name"]
+
+    print(f"{sha} | {author} | {message}")
