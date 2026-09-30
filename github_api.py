@@ -12,7 +12,7 @@ repo = "sre-zero-to-hero"
 headers = {
     "Authorization": f"Bearer {token}",
     "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2026-03-10"
+    "X-GitHub-Api-Version": "2026-03-10",
 }
 
 
@@ -43,16 +43,9 @@ print("Default Branch:", repo_data["default_branch"])
 
 pr_url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
 
-params = {
-    "state": "all",
-    "per_page": 10
-}
+params = {"state": "all", "per_page": 10}
 
-pr_response = requests.get(
-    pr_url,
-    headers=headers,
-    params=params
-)
+pr_response = requests.get(pr_url, headers=headers, params=params)
 
 print("\nPull Request API Status:", pr_response.status_code)
 
@@ -63,20 +56,11 @@ print("-------------------")
 
 total_prs = len(pull_requests)
 
-open_prs = sum(
-    1 for pr in pull_requests
-    if pr["state"] == "open"
-)
+open_prs = sum(1 for pr in pull_requests if pr["state"] == "open")
 
-closed_prs = sum(
-    1 for pr in pull_requests
-    if pr["state"] == "closed"
-)
+closed_prs = sum(1 for pr in pull_requests if pr["state"] == "closed")
 
-merged_prs = sum(
-    1 for pr in pull_requests
-    if pr["merged_at"] is not None
-)
+merged_prs = sum(1 for pr in pull_requests if pr["merged_at"] is not None)
 
 unmerged_prs = closed_prs - merged_prs
 
@@ -92,16 +76,9 @@ print("Unmerged PRs:", unmerged_prs)
 
 issues_url = f"https://api.github.com/repos/{owner}/{repo}/issues"
 
-issue_params = {
-    "state": "all",
-    "per_page": 100
-}
+issue_params = {"state": "all", "per_page": 100}
 
-issues_response = requests.get(
-    issues_url,
-    headers=headers,
-    params=issue_params
-)
+issues_response = requests.get(issues_url, headers=headers, params=issue_params)
 
 print("\nIssues API Status:", issues_response.status_code)
 
@@ -110,20 +87,11 @@ issues_data = issues_response.json()
 # GitHub returns pull requests through the Issues API.
 # We exclude them because we only want actual issues.
 
-actual_issues = [
-    issue for issue in issues_data
-    if "pull_request" not in issue
-]
+actual_issues = [issue for issue in issues_data if "pull_request" not in issue]
 
-open_issues = sum(
-    1 for issue in actual_issues
-    if issue["state"] == "open"
-)
+open_issues = sum(1 for issue in actual_issues if issue["state"] == "open")
 
-closed_issues = sum(
-    1 for issue in actual_issues
-    if issue["state"] == "closed"
-)
+closed_issues = sum(1 for issue in actual_issues if issue["state"] == "closed")
 
 total_issues = len(actual_issues)
 
@@ -140,15 +108,9 @@ print("Closed Issues:", closed_issues)
 
 commits_url = f"https://api.github.com/repos/{owner}/{repo}/commits"
 
-commit_params = {
-    "per_page": 10
-}
+commit_params = {"per_page": 10}
 
-commits_response = requests.get(
-    commits_url,
-    headers=headers,
-    params=commit_params
-)
+commits_response = requests.get(commits_url, headers=headers, params=commit_params)
 
 print("\nCommits API Status:", commits_response.status_code)
 
@@ -165,3 +127,51 @@ for commit in commits_data:
     author = commit["commit"]["author"]["name"]
 
     print(f"{sha} | {author} | {message}")
+
+# -----------------------------------
+# GitHub Actions Health
+# -----------------------------------
+
+actions_url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs"
+
+actions_params = {"per_page": 20}
+
+actions_response = requests.get(actions_url, headers=headers, params=actions_params)
+
+print("\nActions API Status:", actions_response.status_code)
+
+actions_data = actions_response.json()
+
+workflow_runs = actions_data.get("workflow_runs", [])
+
+successful_runs = sum(
+    1 for run in workflow_runs
+    if run["conclusion"] == "success"
+)
+
+failed_runs = sum(
+    1 for run in workflow_runs
+    if run["conclusion"] == "failure"
+)
+
+in_progress_runs = sum(
+    1 for run in workflow_runs
+    if run["status"] in ["queued", "in_progress"]
+)
+
+completed_runs = successful_runs + failed_runs
+
+if completed_runs > 0:
+    ci_success_rate = (
+        successful_runs / completed_runs
+    ) * 100
+else:
+    ci_success_rate = 0
+
+print("\nGitHub Actions Health")
+print("---------------------")
+print("Workflow Runs:", len(workflow_runs))
+print("Successful:", successful_runs)
+print("Failed:", failed_runs)
+print("In Progress:", in_progress_runs)
+print(f"CI Success Rate: {ci_success_rate:.1f}%")
