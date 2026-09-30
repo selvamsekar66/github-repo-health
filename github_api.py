@@ -58,13 +58,30 @@ print("\nPull Request API Status:", pr_response.status_code)
 
 pull_requests = pr_response.json()
 
-print("\nPull Requests")
-print("-------------")
+print("\nPull Request Health")
+print("-------------------")
 
-for pr in pull_requests:
-    print(
-        f"#{pr['number']} | "
-        f"{pr['title']} | "
-        f"State: {pr['state']} | "
-        f"Merged: {pr['merged_at'] is not None}"
-    )
+total_prs = len(pull_requests)
+
+open_prs = sum(
+    1 for pr in pull_requests
+    if pr["state"] == "open"
+)
+
+closed_prs = sum(
+    1 for pr in pull_requests
+    if pr["state"] == "closed"
+)
+
+merged_prs = sum(
+    1 for pr in pull_requests
+    if pr["merged_at"] is not None
+)
+
+unmerged_prs = closed_prs - merged_prs
+
+print("Total PRs:", total_prs)
+print("Open PRs:", open_prs)
+print("Closed PRs:", closed_prs)
+print("Merged PRs:", merged_prs)
+print("Unmerged PRs:", unmerged_prs)
