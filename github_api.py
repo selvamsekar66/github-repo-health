@@ -6,22 +6,65 @@ load_dotenv()
 
 token = os.getenv("GITHUB_TOKEN")
 
-url = "https://api.github.com/repos/selvamsekar66/sre-zero-to-hero"
+owner = "selvamsekar66"
+repo = "sre-zero-to-hero"
 
 headers = {
     "Authorization": f"Bearer {token}",
-    "Accept": "application/vnd.github+json"
+    "Accept": "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2026-03-10"
 }
 
-response = requests.get(url, headers=headers)
 
-print("Status Code:", response.status_code)
+# -----------------------------------
+# Repository Information
+# -----------------------------------
 
-data = response.json()
+repo_url = f"https://api.github.com/repos/{owner}/{repo}"
 
-print("Repository:", data["name"])
-print("Description:", data["description"])
-print("Stars:", data["stargazers_count"])
-print("Forks:", data["forks_count"])
-print("Open Issues:", data["open_issues_count"])
-print("Default Branch:", data["default_branch"])
+response = requests.get(repo_url, headers=headers)
+
+print("Repository API Status:", response.status_code)
+
+repo_data = response.json()
+
+print("\nRepository Information")
+print("----------------------")
+print("Repository:", repo_data["name"])
+print("Stars:", repo_data["stargazers_count"])
+print("Forks:", repo_data["forks_count"])
+print("Open Issues:", repo_data["open_issues_count"])
+print("Default Branch:", repo_data["default_branch"])
+
+
+# -----------------------------------
+# Pull Request Information
+# -----------------------------------
+
+pr_url = f"https://api.github.com/repos/{owner}/{repo}/pulls"
+
+params = {
+    "state": "all",
+    "per_page": 10
+}
+
+pr_response = requests.get(
+    pr_url,
+    headers=headers,
+    params=params
+)
+
+print("\nPull Request API Status:", pr_response.status_code)
+
+pull_requests = pr_response.json()
+
+print("\nPull Requests")
+print("-------------")
+
+for pr in pull_requests:
+    print(
+        f"#{pr['number']} | "
+        f"{pr['title']} | "
+        f"State: {pr['state']} | "
+        f"Merged: {pr['merged_at'] is not None}"
+    )
