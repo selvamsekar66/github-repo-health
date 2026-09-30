@@ -85,3 +85,50 @@ print("Open PRs:", open_prs)
 print("Closed PRs:", closed_prs)
 print("Merged PRs:", merged_prs)
 print("Unmerged PRs:", unmerged_prs)
+
+# -----------------------------------
+# Issue Information
+# -----------------------------------
+
+issues_url = f"https://api.github.com/repos/{owner}/{repo}/issues"
+
+issue_params = {
+    "state": "all",
+    "per_page": 100
+}
+
+issues_response = requests.get(
+    issues_url,
+    headers=headers,
+    params=issue_params
+)
+
+print("\nIssues API Status:", issues_response.status_code)
+
+issues_data = issues_response.json()
+
+# GitHub returns pull requests through the Issues API.
+# We exclude them because we only want actual issues.
+
+actual_issues = [
+    issue for issue in issues_data
+    if "pull_request" not in issue
+]
+
+open_issues = sum(
+    1 for issue in actual_issues
+    if issue["state"] == "open"
+)
+
+closed_issues = sum(
+    1 for issue in actual_issues
+    if issue["state"] == "closed"
+)
+
+total_issues = len(actual_issues)
+
+print("\nIssue Health")
+print("------------")
+print("Total Issues:", total_issues)
+print("Open Issues:", open_issues)
+print("Closed Issues:", closed_issues)
