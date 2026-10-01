@@ -23,11 +23,11 @@ RepoPulse provides a centralized view of:
 
 ### Dashboard Preview
 
-![RepoPulse Dashboard Overview](docs/images/repopulse-overview.png)
+![RepoPulse Dashboard Overview](images/repopulse-overview.png)
 
 ### Engineering Activity
 
-![RepoPulse Engineering Activity](docs/images/repopulse-activity.png)
+![RepoPulse Engineering Activity](images/repopulse-activity.png)
 ---
 
 ## Architecture
