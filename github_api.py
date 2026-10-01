@@ -220,12 +220,68 @@ def calculate_actions_health(workflow_runs):
     }
 
 
+def calculate_repository_health(
+    pr_health,
+    issue_health,
+    actions_health
+):
+    """Determine overall repository health."""
+
+    reasons = []
+
+    if pr_health["open"] > 0:
+        reasons.append(
+            f"{pr_health['open']} open pull request(s)"
+        )
+
+    if issue_health["open"] > 0:
+        reasons.append(
+            f"{issue_health['open']} open issue(s)"
+        )
+
+    if actions_health["failed"] > 0:
+        reasons.append(
+            f"{actions_health['failed']} failed workflow run(s)"
+        )
+
+    if reasons:
+        status = "NEEDS ATTENTION"
+    else:
+        status = "HEALTHY"
+
+    return {
+        "status": status,
+        "reasons": reasons
+    }
+
+
+def get_workflow_details(workflow_runs):
+    """Extract useful details from workflow runs."""
+
+    workflow_details = []
+
+    for run in workflow_runs:
+
+        workflow_details.append({
+            "name": run["name"],
+            "branch": run["head_branch"],
+            "status": run["status"],
+            "conclusion": run["conclusion"],
+            "created_at": run["created_at"],
+            "updated_at": run["updated_at"]
+        })
+
+    return workflow_details
+
+
 def display_report(
     repository,
     pr_health,
     issue_health,
     commits,
-    actions_health
+    actions_health,
+    repository_health,
+    workflow_details
 ):
     """Display repository health report."""
 
@@ -234,12 +290,24 @@ def display_report(
     print("       GITHUB REPOSITORY HEALTH")
     print("=" * 45)
 
+    print(
+        "Repository Health:",
+        repository_health["status"]
+    )
+
+    if repository_health["reasons"]:
+        print("\nAttention Required:")
+
+        for reason in repository_health["reasons"]:
+            print("-", reason)
+
     print("\nRepository")
     print("-" * 45)
 
     print("Name:", repository["name"])
     print("Stars:", repository["stargazers_count"])
     print("Forks:", repository["forks_count"])
+
     print(
         "Default Branch:",
         repository["default_branch"]
@@ -269,9 +337,21 @@ def display_report(
     print("\nGitHub Actions")
     print("-" * 45)
 
-    print("Workflow Runs:", actions_health["total"])
-    print("Successful:", actions_health["successful"])
-    print("Failed:", actions_health["failed"])
+    print(
+        "Workflow Runs:",
+        actions_health["total"]
+    )
+
+    print(
+        "Successful:",
+        actions_health["successful"]
+    )
+
+    print(
+        "Failed:",
+        actions_health["failed"]
+    )
+
     print(
         "In Progress:",
         actions_health["in_progress"]
@@ -282,7 +362,19 @@ def display_report(
         f"{actions_health['success_rate']:.1f}%"
     )
 
-    print("\n" + "=" * 45)
+    print("\nRecent Workflow Runs")
+    print("-" * 45)
+
+    for workflow in workflow_details[:5]:
+
+        print("Workflow:", workflow["name"])
+        print("Branch:", workflow["branch"])
+        print("Status:", workflow["status"])
+        print("Conclusion:", workflow["conclusion"])
+        print("Updated:", workflow["updated_at"])
+        print()
+
+    print("=" * 45)
 
 
 def main():
@@ -310,12 +402,24 @@ def main():
         workflow_runs
     )
 
+    repository_health = calculate_repository_health(
+        pr_health,
+        issue_health,
+        actions_health
+    )
+
+    workflow_details = get_workflow_details(
+        workflow_runs
+    )
+
     display_report(
         repository,
         pr_health,
         issue_health,
         commits,
-        actions_health
+        actions_health,
+        repository_health,
+        workflow_details
     )
 
 
