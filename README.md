@@ -21,6 +21,13 @@ RepoPulse provides a centralized view of:
 - Recent engineering activity
 - Repository engineering signals
 
+### Dashboard Preview
+
+![RepoPulse Dashboard Overview](docs/images/repopulse-overview.png)
+
+### Engineering Activity
+
+![RepoPulse Engineering Activity](docs/images/repopulse-activity.png)
 ---
 
 ## Architecture
