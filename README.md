@@ -21,6 +21,10 @@ RepoPulse provides a centralized view of:
 - Recent engineering activity
 - Repository engineering signals
 
+## Live Demo
+
+[Open RepoPulse Dashboard](https://repopulse-dashboard.streamlit.app)
+
 ### Dashboard Preview
 
 ![RepoPulse Dashboard Overview](images/repopulse-overview.png)
