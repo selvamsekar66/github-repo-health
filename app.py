@@ -17,6 +17,8 @@ from github_api import (
     calculate_actions_health,
 )
 
+st.write("GitHub token loaded:", bool(os.getenv("GITHUB_TOKEN")))
+
 st.set_page_config(
     page_title="RepoPulse | Engineering Intelligence",
     page_icon="📡",
