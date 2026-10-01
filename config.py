@@ -5,6 +5,13 @@ load_dotenv()
 
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 
+if not GITHUB_TOKEN:
+    try:
+        import streamlit as st
+        GITHUB_TOKEN = st.secrets["GITHUB_TOKEN"]
+    except Exception:
+        GITHUB_TOKEN = None
+
 OWNER = "selvamsekar66"
 REPOSITORY = "sre-zero-to-hero"
 
