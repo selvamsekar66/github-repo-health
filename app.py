@@ -4,7 +4,6 @@ from datetime import datetime, timezone
 import pandas as pd
 import requests
 import streamlit as st
-import os
 
 from config import OWNER, REPOSITORY
 from github_api import (
@@ -16,9 +15,12 @@ from github_api import (
     calculate_pr_health,
     calculate_issue_health,
     calculate_actions_health,
+    calculate_open_pr_aging,
+    calculate_pr_merge_time,
+    calculate_workflow_duration_metrics,
+    get_pr_metrics_data,
+    get_workflow_run_jobs,
 )
-
-st.write("GitHub token loaded:", bool(os.getenv("GITHUB_TOKEN")))
 
 st.set_page_config(
     page_title="RepoPulse | Engineering Intelligence",
@@ -74,6 +76,21 @@ def load_data():
     }
 
 
+@st.cache_data(ttl=120, show_spinner=False)
+def load_pr_metrics_data():
+    """Cache the bounded PR aging and merge-history query for two minutes."""
+    return get_pr_metrics_data()
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def load_workflow_jobs(run_ids):
+    """Cache job timing data for the recent displayed workflow runs."""
+    return {
+        str(run_id): get_workflow_run_jobs(run_id)
+        for run_id in run_ids
+    }
+
+
 def readable_time(timestamp):
     if not timestamp:
         return "—"
@@ -87,19 +104,34 @@ def section(text):
     st.markdown(f'<div class="section-title">{html.escape(text)}</div>', unsafe_allow_html=True)
 
 
+def readable_duration(seconds):
+    if seconds is None:
+        return "N/A"
+    if seconds < 60:
+        return f"{seconds:.0f} sec"
+    if seconds < 3600:
+        minutes, remaining_seconds = divmod(round(seconds), 60)
+        return f"{minutes} min {remaining_seconds} sec"
+    hours, remaining_seconds = divmod(round(seconds), 3600)
+    minutes = remaining_seconds // 60
+    return f"{hours} hr {minutes} min"
+
+
 with st.sidebar:
     st.markdown("## 📡 RepoPulse")
-    st.caption("Engineering intelligence / v1.0")
+    st.caption("Engineering intelligence / v2.0 · Phase 1")
     st.divider()
     st.caption("MONITORED REPOSITORY")
     st.code(f"{OWNER}/{REPOSITORY}", language=None)
     if st.button("↻ Refresh GitHub data", use_container_width=True):
         load_data.clear()
+        load_pr_metrics_data.clear()
+        load_workflow_jobs.clear()
         st.rerun()
     st.caption("Data cache: 120 seconds. Refresh clears the cache.")
     st.divider()
     st.markdown("**Data sources**")
-    st.caption("GitHub REST API · Pull Requests · Issues · Commits · Actions")
+    st.caption("GitHub REST API · PR metrics · Issues · Commits · Actions")
     st.divider()
     st.caption("Repository health is a configurable engineering assessment, not a service availability SLO.")
 
@@ -117,14 +149,62 @@ except Exception as exc:
         st.code(str(exc))
     st.stop()
 
+pr_metrics_error = False
+pr_metrics_error_message = (
+    "PR aging and time-to-merge metrics are temporarily unavailable. "
+    "The rest of the dashboard is still available."
+)
+try:
+    with st.spinner("Fetching pull request aging data..."):
+        pr_metrics_data = load_pr_metrics_data()
+    metric_now = datetime.now(timezone.utc)
+    open_pr_metrics = calculate_open_pr_aging(
+        pr_metrics_data["open_pull_requests"],
+        now=metric_now,
+    )
+    merge_time_metrics = calculate_pr_merge_time(
+        pr_metrics_data["closed_pull_requests"],
+        now=metric_now,
+    )
+except requests.exceptions.RequestException as exc:
+    pr_metrics_error = True
+    response = getattr(exc, "response", None)
+    if response is not None and getattr(response, "status_code", None) in (403, 429):
+        pr_metrics_error_message = (
+            "GitHub could not provide PR metrics (rate limit or permission restriction). "
+            "The rest of the dashboard is still available; try refreshing later."
+        )
+except (ValueError, KeyError):
+    pr_metrics_error = True
+
+runs = data["workflow_runs"]
+workflow_duration_error = False
+workflow_runs_for_duration = runs[:10]
+completed_run_ids = [
+    run["id"]
+    for run in workflow_runs_for_duration
+    if run.get("status") == "completed"
+    and isinstance(run.get("id"), (int, str))
+    and not isinstance(run.get("id"), bool)
+]
+try:
+    workflow_jobs = load_workflow_jobs(completed_run_ids)
+except (requests.exceptions.RequestException, ValueError, KeyError):
+    workflow_jobs = {}
+    workflow_duration_error = True
+workflow_duration_metrics = calculate_workflow_duration_metrics(
+    workflow_runs_for_duration,
+    workflow_jobs,
+)
+
 repository = data["repository"]
 prs = data["pull_requests"]
 issues = data["issues"]
 commits = data["commits"]
-runs = data["workflow_runs"]
 pr_health = calculate_pr_health(prs)
 issue_health = calculate_issue_health(issues)
-actions_health = calculate_actions_health(runs)
+# Keep the original CI success-rate population: the first 20 recent runs.
+actions_health = calculate_actions_health(runs[:20])
 
 # An open PR is normal engineering activity, not a reliability incident.
 # Treat failed CI runs and open issues as attention signals for this starter app.
@@ -183,6 +263,107 @@ with right:
     completed = actions_health["successful"] + actions_health["failed"]
     st.progress(actions_health["successful"] / completed if completed else 0, text=f"Success share of {completed} success/failure runs" if completed else "No success/failure runs")
 
+st.markdown("**Workflow duration · recent 10 runs**")
+if workflow_duration_error:
+    st.info(
+        "Workflow duration data is temporarily unavailable. "
+        "The existing CI metrics and run list remain available."
+    )
+else:
+    duration_columns = st.columns(3)
+    with duration_columns[0]:
+        st.metric(
+            "Average duration",
+            readable_duration(workflow_duration_metrics["average_seconds"]),
+        )
+    with duration_columns[1]:
+        st.metric(
+            "Median duration",
+            readable_duration(workflow_duration_metrics["median_seconds"]),
+        )
+    with duration_columns[2]:
+        st.metric(
+            "P90 duration",
+            readable_duration(workflow_duration_metrics["p90_seconds"]),
+        )
+    st.caption(
+        f"{workflow_duration_metrics['sample_size']} of "
+        f"{len(workflow_runs_for_duration)} recent runs had valid completed job times."
+    )
+st.caption(
+    "Duration is the elapsed span from the earliest valid job start to the latest "
+    "valid job completion; it excludes time spent queued."
+)
+
+st.markdown("**Open PR aging**")
+if pr_metrics_error:
+    st.warning(pr_metrics_error_message)
+else:
+    age_columns = st.columns(4)
+    age_labels = list(open_pr_metrics["category_counts"])
+    for column, label in zip(age_columns, age_labels):
+        with column:
+            st.metric(label, open_pr_metrics["category_counts"][label])
+    st.caption(
+        f"Age is measured from creation time to now. "
+        f"{open_pr_metrics['valid_age_count']} of "
+        f"{open_pr_metrics['open_pr_count']} fetched open PRs had valid timestamps. "
+        f"{open_pr_metrics['invalid_timestamp_count']} missing, malformed, or future "
+        "creation timestamps were excluded. "
+        "Buckets use completed 24-hour days and are configurable engineering indicators, "
+        "not universal SRE thresholds."
+    )
+
+    oldest_rows = [
+        {
+            "PR": f'#{pr["number"]}',
+            "Title": pr["title"],
+            "Age": f'{pr["age_days"]:.1f} days',
+            "Draft": "Yes" if pr["draft"] else "No",
+            "GitHub": pr["html_url"],
+        }
+        for pr in open_pr_metrics["oldest_open_prs"]
+    ]
+    if oldest_rows:
+        st.dataframe(
+            pd.DataFrame(oldest_rows),
+            hide_index=True,
+            use_container_width=True,
+            column_config={
+                "GitHub": st.column_config.LinkColumn(
+                    "Open PR",
+                    display_text="View ↗",
+                )
+            },
+        )
+    else:
+        st.info("No open PRs with valid creation timestamps were found in the fetched sample.")
+
+    st.markdown("**PR time-to-merge**")
+    merge_columns = st.columns(3)
+    median_value = merge_time_metrics["median_days"]
+    p75_value = merge_time_metrics["p75_days"]
+    with merge_columns[0]:
+        st.metric(
+            "Median time-to-merge",
+            f"{median_value:.1f} days" if median_value is not None else "N/A",
+        )
+    with merge_columns[1]:
+        st.metric(
+            "P75 time-to-merge",
+            f"{p75_value:.1f} days" if p75_value is not None else "N/A",
+        )
+    with merge_columns[2]:
+        st.metric("Merged PR sample", merge_time_metrics["sample_size"])
+    st.caption(
+        f"Window: merged in the trailing {merge_time_metrics['window_days']} days "
+        f"({merge_time_metrics['window_start'][:10]} to "
+        f"{merge_time_metrics['window_end'][:10]} UTC). "
+        f"At most {pr_metrics_data['closed_sample_limit']} recently updated closed PRs "
+        "are checked; values are based only on valid merged PRs in that sample. "
+        "PR time-to-merge is not production lead time or a DORA metric."
+    )
+
 section("Recent pull requests")
 pr_rows = [
     {
@@ -210,8 +391,11 @@ run_rows = [
     {
         "Workflow": run.get("name") or "Unnamed workflow",
         "Branch": run.get("head_branch") or "—",
+        "Duration": readable_duration(
+            workflow_duration_metrics["durations_by_run_id"].get(str(run.get("id")))
+        ),
         "Status": run.get("status") or "—",
-        "Result": (run.get("conclusion") or "pending").upper(),
+        "Conclusion": (run.get("conclusion") or "pending").upper(),
         "Updated (UTC)": readable_time(run.get("updated_at")),
         "GitHub": run.get("html_url", ""),
     }
@@ -252,12 +436,15 @@ with st.expander("About these metrics and limitations"):
     st.markdown(
         "- **CI success rate** = successful runs / (successful + failed runs) in the fetched sample. "
         "Cancelled, skipped and pending runs are excluded from this denominator.\n"
-        "- **Pull requests, issues, commits and workflow runs** are limited by the existing API fetch sizes "
-        "(100 PRs, 100 issue records, 10 commits, 20 workflow runs); pagination is not yet implemented.\n"
+        "- **Existing dashboard sample panels** still use the original one-page fetch limits "
+        "(100 PRs, 100 issue records, 10 commits, and a 20-run CI success-rate sample). "
+        "PR aging and workflow duration use separate bounded API queries.\n"
+        "- **PR aging and time-to-merge** use a separate bounded query of up to 300 open and 300 recently "
+        "updated closed PRs. Merge-time statistics include valid merges in the trailing 90 days only.\n"
         "- **Assessment** is a simple triage indicator based on fetched open issues and failed workflow runs. "
         "Open PRs alone are not treated as unhealthy.\n"
         "- **Not measured:** production uptime, SLO compliance, deployment frequency, lead time, change failure rate or MTTR."
     )
 
 st.divider()
-st.caption("RepoPulse v1.0 · Python · GitHub REST API · Streamlit · SRE learning project")
+st.caption("RepoPulse v2.0 · Python · GitHub REST API · Streamlit · SRE learning project")
