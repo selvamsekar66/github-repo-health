@@ -14,6 +14,7 @@ RepoPulse provides a centralized view of:
 
 - Repository information
 - Pull request activity
+- Open pull request aging and time-to-merge
 - Issue activity
 - GitHub Actions
 - CI success rate
@@ -84,6 +85,23 @@ GitHub REST API
 - Closed pull requests
 - Merged pull requests
 - Unmerged pull requests
+- Open PR age categories and a table of up to 10 oldest open PRs
+- Median and P75 PR time-to-merge for valid merges in the trailing 90 days
+
+PR age is calculated from `created_at` to the current UTC time, not from the
+last update. Age buckets use completed 24-hour days: 0–2, 3–7, 8–14, and 15+
+days. These categories are configurable engineering indicators, not universal
+SRE standards or automatic failure signals.
+
+Time-to-merge is `merged_at - created_at`; closed but unmerged PRs and invalid
+timestamps are excluded. The median, P75, and valid observation count cover
+PRs merged in the trailing 90-day window. GitHub's PR list API is ordered by
+recent updates rather than merge time, so RepoPulse checks a bounded sample of
+up to 300 open and 300 recently updated closed PRs (three pages of 100 per
+state). Counts, oldest-PR results, and merge-time percentiles describe this
+sample, not necessarily every PR in the repository. Empty valid merge samples
+are shown as unavailable rather than zero. P75 uses linear interpolation
+between ordered observations.
 
 #### Issues
 
@@ -98,7 +116,22 @@ GitHub REST API
 - Failed runs
 - In-progress runs
 - CI success rate
-- Recent workflow details
+- Average, median, and P90 workflow duration
+- Recent workflow details including run duration, status, conclusion, and link
+
+Workflow duration is calculated for completed runs from the earliest valid job
+start time to the latest valid job completion time in that run. Queued time is
+not included. Incomplete runs and runs without valid job time intervals are
+excluded. Average and median use the valid duration sample; P90 uses linear
+interpolation between ordered observations.
+
+Duration details are requested for at most the 10 most recent workflow runs
+shown in the dashboard, and each run's jobs endpoint is paginated up to two
+pages of 100 jobs. The run list itself is paginated up to two pages of 20. These
+limits keep API usage bounded; metrics describe only the available recent
+sample. Workflow duration is separate from CI success rate, which continues to
+use successful runs divided by successful plus failed runs in the original
+sample of the first 20 recent runs.
 
 #### Engineering Activity
 
@@ -163,6 +196,15 @@ GITHUB_TOKEN=your_github_token
 streamlit run app.py
 ```
 
+### Run tests
+
+Install application and development/test dependencies, then run:
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q
+```
+
 Open:
 
 ```text
@@ -181,6 +223,8 @@ github-repo-health/
 ├── config.py
 ├── github_api.py
 ├── requirements.txt
+├── tests/
+│   └── test_github_api.py
 ├── LICENSE
 ├── README.md
 └── .gitignore
@@ -191,3 +235,6 @@ github-repo-health/
 RepoPulse provides repository-level engineering signals.
 It is not an application performance monitoring system and does not represent production service availability or an SLO.
 The metrics should be interpreted within the context of the GitHub repository and the data collected by the application.
+PR time-to-merge is a repository workflow metric; it is not production lead
+time or a DORA metric. This phase does not measure production availability,
+production deployment frequency, change failure rate, or recovery time.
